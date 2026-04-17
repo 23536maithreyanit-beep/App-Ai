@@ -1,10 +1,14 @@
 import 'dart:io';
-import 'dart:typed_data';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../services/ai_service.dart';
+import '../widgets/app_logo.dart';
+import '../widgets/before_after_image_card.dart';
+import '../widgets/gradient_action_button.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -20,9 +24,11 @@ class _HomeScreenState extends State<HomeScreen> {
   File? _originalImage;
   Uint8List? _enhancedImageBytes;
   bool _isProcessing = false;
+  double _comparisonValue = 0.5;
 
   Future<void> _pickImage(ImageSource source) async {
     try {
+      HapticFeedback.selectionClick();
       final XFile? pickedFile = await _picker.pickImage(
         source: source,
         imageQuality: 100,
@@ -36,6 +42,7 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _originalImage = File(pickedFile.path);
         _enhancedImageBytes = null;
+        _comparisonValue = 0.5;
       });
 
       _showSnackBar('Image selected successfully.');
@@ -80,6 +87,7 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
+    HapticFeedback.lightImpact();
     setState(() => _isProcessing = true);
 
     try {
@@ -111,6 +119,7 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
+    HapticFeedback.mediumImpact();
     try {
       final String savedPath = await _aiService.saveEnhancedImage(
         _enhancedImageBytes!,
@@ -128,52 +137,139 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _showSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
+      SnackBar(
+        content: Text(message),
+        margin: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(14),
+        duration: const Duration(seconds: 2),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('AI Photo Enhancer'),
+        title: const Text('AI Photo Enhancer Pro'),
         centerTitle: true,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
       ),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              ElevatedButton.icon(
-                onPressed: _isProcessing ? null : _showSourcePicker,
-                icon: const Icon(Icons.add_photo_alternate_outlined),
-                label: const Text('Pick Image'),
-              ),
-              const SizedBox(height: 8),
-              ElevatedButton.icon(
-                onPressed: _isProcessing ? null : _enhanceImage,
-                icon: const Icon(Icons.auto_fix_high_outlined),
-                label: const Text('Enhance Image'),
-              ),
-              const SizedBox(height: 8),
-              ElevatedButton.icon(
-                onPressed: _isProcessing ? null : _saveEnhancedImage,
-                icon: const Icon(Icons.download_outlined),
-                label: const Text('Save Enhanced Image'),
-              ),
-              const SizedBox(height: 16),
-              if (_isProcessing) ...[
-                const LinearProgressIndicator(),
-                const SizedBox(height: 8),
-                const Text(
-                  'Uploading and enhancing image...',
-                  textAlign: TextAlign.center,
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _isProcessing ? null : _enhanceImage,
+        label: const Text('Quick Enhance'),
+        icon: const Icon(Icons.auto_awesome_rounded),
+      ),
+      body: Stack(
+        children: [
+          const _GradientBackground(),
+          SafeArea(
+            child: AnimatedOpacity(
+              opacity: _isProcessing ? 0.88 : 1,
+              duration: const Duration(milliseconds: 250),
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+                child: Column(
+                  children: [
+                    const AppLogo(),
+                    const SizedBox(height: 12),
+                    Text(
+                      'AI Photo Enhancer Pro',
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Enhance your photos with AI',
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        color: Colors.white.withValues(alpha: 0.88),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    _buildGlassActionCard(isDark),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      height: 360,
+                      child: BeforeAfterImageCard(
+                        originalImage: _originalImage,
+                        enhancedImageBytes: _enhancedImageBytes,
+                        sliderValue: _comparisonValue,
+                        onSliderChanged: (double value) {
+                          setState(() => _comparisonValue = value);
+                        },
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 16),
-              ],
-              Expanded(
-                child: _buildImagePreview(),
+              ),
+            ),
+          ),
+          if (_isProcessing) const _ProcessingOverlay(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGlassActionCard(bool isDark) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(28),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(28),
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.08)
+                : Colors.white.withValues(alpha: 0.20),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.25),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.12),
+                blurRadius: 24,
+                offset: const Offset(0, 16),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              GradientActionButton(
+                label: 'Pick Image',
+                icon: Icons.add_photo_alternate_outlined,
+                gradientColors: const [
+                  Color(0xFF00C9FF),
+                  Color(0xFF6C63FF),
+                ],
+                onPressed: _isProcessing ? null : _showSourcePicker,
+              ),
+              const SizedBox(height: 10),
+              GradientActionButton(
+                label: 'Enhance Image',
+                icon: Icons.auto_fix_high_rounded,
+                gradientColors: const [
+                  Color(0xFF6C63FF),
+                  Color(0xFFFF6FD8),
+                ],
+                isPrimary: true,
+                onPressed: _isProcessing ? null : _enhanceImage,
+              ),
+              const SizedBox(height: 10),
+              GradientActionButton(
+                label: 'Save Image',
+                icon: Icons.download_rounded,
+                gradientColors: const [
+                  Color(0xFF4A7BFF),
+                  Color(0xFF00C9FF),
+                ],
+                onPressed: _isProcessing ? null : _saveEnhancedImage,
               ),
             ],
           ),
@@ -181,80 +277,71 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+}
 
-  Widget _buildImagePreview() {
-    if (_originalImage == null) {
-      return const Center(
-        child: Text(
-          'Select an image to get started.',
-          style: TextStyle(fontSize: 16),
-        ),
-      );
-    }
+class _GradientBackground extends StatelessWidget {
+  const _GradientBackground();
 
-    return Row(
-      children: [
-        Expanded(
-          child: _ImagePanel(
-            title: 'Before',
-            child: Image.file(
-              _originalImage!,
-              fit: BoxFit.cover,
-            ),
-          ),
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF6C63FF),
+            Color(0xFF00C9FF),
+            Color(0xFFFF6FD8),
+          ],
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _ImagePanel(
-            title: 'After',
-            child: _enhancedImageBytes == null
-                ? const Center(
-                    child: Text(
-                      'Enhanced image will appear here.',
-                      textAlign: TextAlign.center,
-                    ),
-                  )
-                : Image.memory(
-                    _enhancedImageBytes!,
-                    fit: BoxFit.cover,
-                  ),
-          ),
-        ),
-      ],
+      ),
+      child: const SizedBox.expand(),
     );
   }
 }
 
-class _ImagePanel extends StatelessWidget {
-  const _ImagePanel({
-    required this.title,
-    required this.child,
-  });
-
-  final String title;
-  final Widget child;
+class _ProcessingOverlay extends StatelessWidget {
+  const _ProcessingOverlay();
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          title,
-          style: Theme.of(context).textTheme.titleMedium,
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 8),
-        Expanded(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: Container(
-              color: Colors.grey.shade200,
-              child: child,
+    return Container(
+      color: Colors.black.withValues(alpha: 0.25),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 74,
+              height: 74,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF00C9FF).withValues(alpha: 0.45),
+                    blurRadius: 30,
+                    spreadRadius: 6,
+                  ),
+                ],
+              ),
+              child: const CircularProgressIndicator(
+                strokeWidth: 5,
+                color: Colors.white,
+              ),
             ),
-          ),
+            const SizedBox(height: 16),
+            const Text(
+              'Enhancing...',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
